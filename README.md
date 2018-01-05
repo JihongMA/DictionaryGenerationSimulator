@@ -52,7 +52,7 @@ It could emulate dictionary generation and encoding on any *.csv* files
       --batch BATCH         Number of new keys in each new key proposal for each
                             experiment combination,defaults to array={16,}
       --delay DELAY         Latency(s) with norm distribution is added to each
-                            massage for each experiment combination, defaults to
+                            message for each experiment combination, defaults to
                             array={0}
       --lookahead LOOKAHEAD
                             Portion of the file to look ahead for each experiment
