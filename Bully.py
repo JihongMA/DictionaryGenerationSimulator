@@ -82,6 +82,7 @@ class Value_space_manager(Peer):
         self.value_for_alloc = len(dic)
         self.pipes = pipes
         self.sent = 0
+        self.sch = sched.scheduler(time.time, time.sleep)
         self.delay = delay
         ret.value = self.run()
 
@@ -106,6 +107,7 @@ class Value_space_manager(Peer):
                         assert received["type"] == "APPLY_VALUE_SPACE"
                         sender = received["worker_num"]
                         self.my_send(p, self.make_VALUE_SPACE_ALLOC(sender,received))
+                        self.sch.run()
                         self.value_for_alloc += NUMPERALLOC
                     #print("manager {} sends {}").format(self.worker_num, self.value_for_alloc)
         for p in self.pipes:
@@ -125,7 +127,7 @@ class Worker_2PC_bully(Peer):
         self.alloc = 0
         # Number of keys to buffer before blocking to propose them
         self.buffer_size = buffer_size
-
+        self.sch = sched.scheduler(time.time, time.sleep)
         self.d = dict(dic)
         self.next_value = 1
         self.done = []
@@ -202,6 +204,7 @@ class Worker_2PC_bully(Peer):
             p = self.pipes[i]
             recipient_num = i if i < self.worker_num else i+1
             self.my_send(p, self.make_2PC_NEW_KEY(recipient_num, new_keys))
+        self.sch.run()
 
     def send_ABORTs(self, new_keys, start_value):
         self.abort += 1
@@ -209,12 +212,14 @@ class Worker_2PC_bully(Peer):
             p = self.pipes[i]
             recipient_num = i if i < self.worker_num else i+1
             self.my_send(p, self.make_2PC_COMPLETION_ABORT(recipient_num, new_keys, start_value))
+        self.sch.run()
 
     def send_COMMITs(self, new_keys, start_value):
         for i in range(len(self.pipes)):
             p = self.pipes[i]
             recipient_num = i if i < self.worker_num else i+1
             self.my_send(p, self.make_2PC_COMPLETION_COMMIT(recipient_num, new_keys, start_value))
+        self.sch.run()
 
     def send_DONEs(self):
         #self.my_send(self.manager_pipe, None)
@@ -223,10 +228,11 @@ class Worker_2PC_bully(Peer):
             recipient_num = i if i < self.worker_num else i+1
             self.my_send(p, self.make_2PC_DONE(recipient_num))
         self.my_send(self.manager_pipe, self.make_2PC_DONE('VALUE_SPACE_MANAGER'))
-
+        self.sch.run()
 
     def apply_new_value_space(self):
         self.my_send(self.manager_pipe, self.make_APPLY_VALUE_SPACE())
+        self.sch.run()
         while (self.manager_pipe.poll(None)):
             received = self.manager_pipe.recv()
             self.alloc = received["new_start_value"]
@@ -296,6 +302,7 @@ class Worker_2PC_bully(Peer):
                         for k, v in received["new_keys"].items():
                             if k in self.d:
                                 self.my_send(p, self.make_2PC_VOTE_NO(sender, received))
+                                self.sch.run()
                                 save = False
                                 self.key_conflict += 1
                                 break
@@ -304,6 +311,7 @@ class Worker_2PC_bully(Peer):
                             self.saved_proposal[sender][0] = received
                             self.saved_proposal[sender][1] = p
                             self.my_send(p, self.make_2PC_VOTE_YES(sender, received))
+                            self.sch.run()
                         else:
                             # This should already be ABORTed.
                             pass
@@ -387,6 +395,7 @@ class Worker_2PC_bully(Peer):
                             for k, v in received["new_keys"].items():
                                 if k in self.d:
                                     self.my_send(p, self.make_2PC_VOTE_NO(sender, received))
+                                    self.sch.run()
                                     confli = True
                                     self.key_conflict += 1
                                     break
@@ -396,6 +405,7 @@ class Worker_2PC_bully(Peer):
                                     if sender > self.worker_num:
                                         # Save the proposer and wait for commit/ abort in future when vote yes
                                         self.my_send(p, self.make_2PC_VOTE_YES(sender, received))
+                                        self.sch.run()
                                         self.saved_proposal[sender][0] = received
                                         self.saved_proposal[sender][1] = p
                                         # Be bullied
@@ -404,18 +414,19 @@ class Worker_2PC_bully(Peer):
                                         break
                                     else:
                                         self.my_send(p, self.make_2PC_VOTE_NO(sender, received))
+                                        self.sch.run()
                                         break
                                 else:
                                     pass
                             if confli == False:
                                 # Save the proposer and wait for commit/ abort in future when vote yes
                                 self.my_send(p, self.make_2PC_VOTE_YES(sender, received))
+                                self.sch.run()
                                 self.saved_proposal[sender][0] = received
                                 self.saved_proposal[sender][1] = p
                         # If we get here, this is some other old message; we don't care about it.
                     if start_over:
                         break
-
                 if start_over:
                     break
             if not start_over:

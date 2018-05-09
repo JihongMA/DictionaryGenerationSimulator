@@ -18,7 +18,7 @@ def make_file(words, worker_num, num_words_per_file, zipf_arg, mode):
 
     # the list of words to select for files
     use_words = words[:int(len(words))]
-
+    #print(len(use_words))
     # add skewed distribution to use_words
     if mode == "weighted":
         tmp = use_words[-1]

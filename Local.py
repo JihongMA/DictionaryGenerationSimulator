@@ -7,7 +7,7 @@ import sys
 from timeit import default_timer as timer
 
 
-class Leader_tester(Tester):
+class Local_tester(Tester):
     # Pipe from leader to each worker
     def make_pipes(self, worker_num):
         leader_pipes = []
@@ -18,7 +18,7 @@ class Leader_tester(Tester):
             worker_pipes.append(worker_side)
         return worker_pipes, leader_pipes
 
-    def run_Leader_test(self, worker_num, files, buffer_size):
+    def run_Local_test(self, worker_num, files, buffer_size):
         add_requests = mp.Queue()
         worker_pipes, leader_pipes = self.make_pipes(worker_num)
         children = []
@@ -30,19 +30,16 @@ class Leader_tester(Tester):
         alook = timer()
         tlook = alook-start
         #dic = dict()
-        leader = mp.Process(target=Leader_DL, args=(worker_num, leader_pipes, add_requests, leader_num_sent, leader_key_conflict, self.delay, dic))
         for w in range(worker_num):
             worker_num_sent = mp.Value('I', 0)
-            p = mp.Process(target=Worker_DL, args=(w, worker_pipes[w], add_requests, files[w], self.fieldnum, buffer_size, worker_num_sent, self.delay, dic))
+            p = mp.Process(target=Worker_Local, args=(w, worker_pipes[w], add_requests, files[w], self.fieldnum, buffer_size, worker_num_sent, self.delay, dic))
             worker_num_sent_list.append(worker_num_sent)
             children.append(p)
 
         gc.collect()
 
-        leader.start()
         for p in children:
             p.start()
-        leader.join()
         for p in children:
             p.join()
         end = timer()
@@ -53,49 +50,9 @@ class Leader_tester(Tester):
         return elapsed, tlook, tdict, num_messages_sent, num_key_conflict, 0
 
     def run_test(self):
-        return self.run_Leader_test(self.worker_num, self.files, self.buffer_size)
-# All new keys in each proposal could be partially accepted or rejected
-class Leader_DL(Peer):
-    def __init__(self, worker_num, pipes, add_requests, ret, confl, delay, dic):
-        self.worker_num = worker_num # total number of workers
-        self.pipes = pipes
-        self.ar = add_requests
-        self.delay = delay
-        self.d = dict(dic)
-        self.sch = sched.scheduler(time.time, time.sleep)
-        self.sent = 0
-        self.key_conflict = 0
-        self.next_val = len(dic)
-        ret.value, confl.value = self.run()
+        return self.run_Local_test(self.worker_num, self.files, self.buffer_size)
 
-    def run(self):
-        workers_done = 0
-        while workers_done < self.worker_num:
-            proposed_keys = self.ar.get()
-            if proposed_keys == None:
-                workers_done += 1
-                continue
-            new_keys = {}
-            for k in proposed_keys:
-                if k not in self.d:
-                    self.d[k] = self.next_val
-                    new_keys[k] = self.next_val
-                    self.next_val += 1
-                else:
-                    self.key_conflict += 1
-            if len(new_keys) > 0:
-                for p in self.pipes:
-                    self.my_send(p, new_keys)
-                self.sch.run()
-        for p in self.pipes:
-            self.my_send(p, None)
-            self.sch.run()
-            p.close()
-        print(len(self.d))
-        # print("Leader done (sent {} messages)".format(self.sent))
-        return self.sent, self.key_conflict
-
-class Worker_DL(Peer):
+class Worker_Local(Peer):
     def __init__(self, worker_num, leader_pipe, add_requests, file, fieldnum, buffer_size, ret, delay, dic):
         self.worker_num = worker_num
         self.lp = leader_pipe
@@ -124,29 +81,16 @@ class Worker_DL(Peer):
 
     def run(self):
         # d_lock = th.Lock()
-        t = th.Thread(target=self.listen_for_new_keys, args=())
-        t.start()
 
-        new_keys_list = []
         with open(self.file) as f:
             for line in f:
                 line = line.strip()
-
                 key = line.split(",")[self.fieldnum]
                 if key not in self.d:
-                    new_keys_list.append(key)
-                    if len(new_keys_list) == self.buffer_size:
-                        self.sent += 1
-                        self.ar.put(new_keys_list)
-                        new_keys_list = []
-        if len(new_keys_list) > 0:
-            self.sent += 1
-            self.ar.put(new_keys_list)
-            new_keys_list = 0
+                    self.d[key] =  self.next_val
+                    self.next_val += 1
         # Done parsing
         self.ar.put(None)
-
-        t.join()
         self.lp.close()
         # print("{} has dict: {}".format(worker_num, d))
         # print("{} done (sent {} messages)".format(worker_num, sent))
